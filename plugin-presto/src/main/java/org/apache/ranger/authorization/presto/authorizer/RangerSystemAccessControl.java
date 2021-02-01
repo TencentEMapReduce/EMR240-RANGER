@@ -32,7 +32,6 @@ import org.apache.ranger.plugin.policyengine.RangerAccessResourceImpl;
 import org.apache.ranger.plugin.policyengine.RangerAccessResult;
 import org.apache.ranger.plugin.policyengine.RangerPolicyEngine;
 import org.apache.ranger.plugin.service.RangerBasePlugin;
-import org.mortbay.log.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +48,7 @@ public class RangerSystemAccessControl
 
   public static String RANGER_CONFIG_KEYTAB = "ranger.keytab";
   public static String RANGER_CONFIG_PRINCIPAL = "ranger.principal";
-
+  final public static String RANGER_CONFIG_USE_UGI = "ranger.use_ugi";
   public static String RANGER_PRESTO_SERVICETYPE = "presto";
   public static String RANGER_PRESTO_APPID = "presto";
 
@@ -100,7 +99,7 @@ public class RangerSystemAccessControl
 
     RangerAccessResult result = rangerPlugin.isAccessAllowed(request);
     if (result != null)  {
-      LOG.info("result:\n" + result.toString() + "request:\n" + request.toString());
+      LOG.info("\n result: " + result.toString() + "\n request: " + request.toString() + "\n");
     } else {
       LOG.info("result is NULL!" + "request:\n" + request.toString());
     }
@@ -404,7 +403,7 @@ public class RangerSystemAccessControl
     @Override
     public void checkCanGrantExecuteFunctionPrivilege(SystemSecurityContext context, String functionName, PrestoPrincipal grantee, boolean grantOption)
     {
-        if (!checkPermission(new RangerPrestoResource(), context.getIdentity(), PrestoAccessType.ADMIN)) {
+        if (!checkPermission(createFunctionResource(functionName), context.getIdentity(), PrestoAccessType.ADMIN)) {
             LOG.info("==> RangerSystemAccessControl.checkCanGrantExecuteFunctionPrivilege(" + functionName + ") denied");
             AccessDeniedException.denyGrantExecuteFunctionPrivilege(functionName, context.getIdentity(), grantee.getName());
         }
@@ -429,7 +428,7 @@ public class RangerSystemAccessControl
     @Override
     public void checkCanExecuteProcedure(SystemSecurityContext systemSecurityContext, CatalogSchemaRoutineName procedure)
     {
-        if (!checkPermission(new RangerPrestoResource(), systemSecurityContext.getIdentity(), PrestoAccessType.SELECT)) {
+        if (!checkPermission(createProcedureResource(procedure), systemSecurityContext.getIdentity(), PrestoAccessType.SELECT)) {
             LOG.info("==> RangerSystemAccessControl.checkCanExecuteProcedure(" + procedure.toString() + ") denied");
             AccessDeniedException.denyExecuteProcedure(procedure.toString());
         }
@@ -438,9 +437,9 @@ public class RangerSystemAccessControl
     @Override
     public void checkCanExecuteFunction(SystemSecurityContext systemSecurityContext, String functionName)
     {
-        if (!checkPermission(new RangerPrestoResource(), systemSecurityContext.getIdentity(), PrestoAccessType.SELECT)) {
+        if (!checkPermission(createFunctionResource(functionName), systemSecurityContext.getIdentity(), PrestoAccessType.SELECT)) {
             LOG.info("==> RangerSystemAccessControl.checkCanExecuteFunction(" + functionName + ") denied");
-            AccessDeniedException.denyExecuteProcedure(functionName);
+            AccessDeniedException.denyExecuteFunction(functionName);
         }
     }
 
@@ -461,6 +460,20 @@ public class RangerSystemAccessControl
     return createResource(catalogSchemaTableName.getCatalogName(),
       catalogSchemaTableName.getSchemaTableName().getSchemaName(),
       catalogSchemaTableName.getSchemaTableName().getTableName());
+  }
+
+  private static RangerPrestoResource createFunctionResource(String function) {
+    RangerPrestoResource res = new RangerPrestoResource();
+    res.setValue(RangerPrestoResource.KEY_FUNCTION, function);
+    return res;
+  }
+  private static RangerPrestoResource createProcedureResource(CatalogSchemaRoutineName procedure) {
+    RangerPrestoResource res = new RangerPrestoResource();
+    res.setValue(RangerPrestoResource.KEY_CATALOG, procedure.getCatalogName());
+    res.setValue(RangerPrestoResource.KEY_SCHEMA, procedure.getSchemaRoutineName().getSchemaName());
+    res.setValue(RangerPrestoResource.KEY_PROCEDURE, procedure.getSchemaRoutineName().getRoutineName());
+
+    return res;
   }
 
   private static RangerPrestoResource createResource(String catalogName) {
@@ -506,6 +519,10 @@ class RangerPrestoResource
   public static final String KEY_SCHEMA = "schema";
   public static final String KEY_TABLE = "table";
   public static final String KEY_COLUMN = "column";
+  public static final String KEY_FUNCTION = "function";
+  public static final String KEY_PROCEDURE = "procedure";
+  //public static final String KEY_SYSTEM_PROPERTY = "systemproperty";
+  //public static final String KEY_SESSION_PROPERTY = "sessionproperty";
 
   public RangerPrestoResource() {}
 
@@ -568,6 +585,7 @@ class RangerPrestoAccessRequest
         //prestoAccessType == PrestoAccessType.ADMIN ? RangerPolicyEngine.ADMIN_ACCESS :
           prestoAccessType.name().toLowerCase(ENGLISH), user,
       userGroups);
+    setAccessTime(new Date());
   }
 }
 
